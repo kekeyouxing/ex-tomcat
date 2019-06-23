@@ -74,7 +74,7 @@ public class StringManager {
 		return getString(key, args);
 	}
     
-    private static Hashtable<String, StringManager> managers = new Hashtable();
+    private static Hashtable<String, StringManager> managers = new Hashtable<String, StringManager>();
     
     public synchronized static StringManager getManager(String packageName) {
     	StringManager mgr = (StringManager)managers.get(packageName);
