@@ -8,4 +8,8 @@ public class HttpRequestImpl extends HttpRequestBase{
 		
 	}
 
+	public void recycle() {
+		super.recycle();
+	}
+
 }

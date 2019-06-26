@@ -6,8 +6,11 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import java.security.AccessControlException;
 import java.util.Stack;
 import java.util.Vector;
+
+import ex02.Container;
 
 /**
  * <p>
@@ -49,10 +52,17 @@ public class HttpConnector implements Runnable{
 	
 	private boolean started = false;
 	
-	private int connectionTimeout = Constants.DEFAULT_CONNECTION_TIMEOUT;
+	private int connectionTimeout = 60000;
 	
 	private int bufferSize = 2048;
+
+	private boolean allowChunking = true;
+
+	private Object threadSync = new Object();
 	
+	private Thread thread = null;
+
+	private Container container = null;
 	public int getBufferSize() {
 		return bufferSize;
 	}
@@ -98,7 +108,7 @@ public class HttpConnector implements Runnable{
 		started = true;
 		
 		threadStart();
-		
+		log("Creating processor pool...");
 		while(curProcessors<minProcessors) {
 			if((maxProcessors > 0) && (curProcessors >= maxProcessors)) {
 				break;
@@ -119,16 +129,15 @@ public class HttpConnector implements Runnable{
 	 * </pre>
 	 */
 	public void threadStart() {
-		
-		Thread thread = new Thread(this);
-		thread.setName("httpConnector");
+		log("HttpConnector is starting...");
+		thread = new Thread(this, "HttpConnector");
 		thread.start();
 		
 	}
 
 	public void run() {
 		
-		if(!stopped) {
+		while(!stopped) {
 			
 			Socket socket = null;
 			
@@ -136,8 +145,11 @@ public class HttpConnector implements Runnable{
 				socket = server.accept();
 				if(connectionTimeout > 0)
 					socket.setSoTimeout(connectionTimeout);
+			} catch(AccessControlException ace) {
+				System.out.println("AccessControlException");
 			} catch (IOException e) {
-				e.printStackTrace();
+				System.out.println("IOException, may caused by close socket");
+				continue;
 			}
 			
 			HttpProcessor processor = createProcessor();
@@ -148,9 +160,14 @@ public class HttpConnector implements Runnable{
 				} catch (IOException e) {
 					e.printStackTrace();
 				}
+				continue;
 			}
 			processor.assign(socket);
 			//The processor will recycle itself when it finishes
+		}
+		
+		synchronized (threadSync) {
+			threadSync.notifyAll();
 		}
 		
 	}
@@ -167,7 +184,6 @@ public class HttpConnector implements Runnable{
 	 * @return
 	 */
 	private HttpProcessor createProcessor() {
-		
 		synchronized (processors) {
 			if(processors.size()>0) {
 				return processors.pop();
@@ -218,9 +234,78 @@ public class HttpConnector implements Runnable{
 		
 	}
 
+	public void stop() {
+		if(!started) {
+			return;
+		}
+		started = false;
+		
+		for(int i = 0; i<created.size();i++) {
+			HttpProcessor processor = created.elementAt(i);
+			processor.stop();
+		}
+		
+		synchronized (threadSync) {
+			if(server != null) {
+				try {
+					server.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+			}
+			threadStop();
+		}
+		server = null;
+	}
+	
+	private void threadStop() {
+		stopped = true;
+		try {
+			threadSync.wait(5000);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
+		thread = null;
+	}
+
 	public int getPort() {
 		
 		return port;
+		
+	}
+
+	public boolean isChunkingAllowed() {
+		
+		return allowChunking ;
+		
+	}
+	
+	public boolean getChunkingAllowed() {
+		
+		return isChunkingAllowed();
+		
+	}
+	
+	public void setChunkingAllowed(boolean allowChunking) {
+		
+		this.allowChunking = allowChunking;
+		
+	}
+	
+	private void log(String message) {
+		
+		System.out.println(message);
+		
+	}
+
+	public void setContainer(Container container) {
+		
+		this.container = container;
+		
+	}
+	public Container getContainer() {
+		
+		return container;
 		
 	}
 }
